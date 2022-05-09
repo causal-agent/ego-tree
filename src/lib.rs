@@ -232,6 +232,16 @@ impl<'a, T: 'a> NodeRef<'a, T> {
         self.node.children.map(|(_, id)| unsafe { self.tree.get_unchecked(id) })
     }
 
+    /// Returns the index of the given child or None if child doesn't exist.
+    pub fn index_of_child(&self, child: &NodeRef<T>) -> Option<usize> {
+        for (i, ref each) in self.children().enumerate() {
+            if each == child {
+                return Some(i)
+            }
+        }
+        None
+    }
+
     /// Returns true if this node has siblings.
     pub fn has_siblings(&self) -> bool {
         self.node.prev_sibling.is_some() || self.node.next_sibling.is_some()
@@ -315,6 +325,16 @@ impl<'a, T: 'a> NodeMut<'a, T> {
         self.prepend_id(id)
     }
 
+    /// Insert a new child into this node at given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is not valid.
+    pub fn insert(&mut self, value: T, index: usize) -> NodeMut<T> {
+        let id = self.tree.orphan(value).id;
+        self.insert_id(id, index)
+    }
+
     /// Inserts a new sibling before this node.
     ///
     /// # Panics
@@ -389,6 +409,53 @@ impl<'a, T: 'a> NodeMut<'a, T> {
         {
             if let Some((first_child_id, _)) = self.node().children {
                 self.node().children = Some((first_child_id, new_child_id));
+            } else {
+                self.node().children = Some((new_child_id, new_child_id));
+            }
+        }
+
+        unsafe { self.tree.get_unchecked_mut(new_child_id) }
+    }
+
+    /// Insert a child into this node at given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `new_child_id` or `index` are not valid.
+    pub fn insert_id(&mut self, new_child_id: NodeId, index: usize) -> NodeMut<T> {
+        if index == 0 {
+            return self.prepend_id(new_child_id)
+        }
+
+        assert!(self.has_children(), "invalid index: {}", index);
+
+        let prev_child_id;
+        let next_child_id;
+
+        unsafe {
+            let mut children = self.tree.get_unchecked(self.id).children();
+            prev_child_id = children.nth(index - 1).map(|n| n.id).unwrap();
+            next_child_id = children.next().map(|n| n.id);
+        }
+
+        {
+            let mut new_child = self.tree.get_mut(new_child_id).unwrap();
+            new_child.detach();
+            new_child.node().parent = Some(self.id);
+            new_child.node().prev_sibling = Some(prev_child_id);
+            new_child.node().next_sibling = next_child_id;
+        }
+
+        unsafe { self.tree.node_mut(prev_child_id).next_sibling = Some(new_child_id); }
+
+        if let Some(id) = next_child_id {
+            unsafe { self.tree.node_mut(id).prev_sibling = Some(new_child_id); }
+        }
+
+        {
+            if let Some((first_child_id, last_child_id)) = self.node().children {
+                let last_child_id = next_child_id.map_or(new_child_id, |_| last_child_id);
+                self.node().children = Some((first_child_id, last_child_id));
             } else {
                 self.node().children = Some((new_child_id, new_child_id));
             }
