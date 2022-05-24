@@ -49,7 +49,7 @@ pub struct Tree<T> {
 /// Node ID.
 ///
 /// Index into a `Tree`-internal `Vec`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(NonZeroUsize);
 
 impl NodeId {
